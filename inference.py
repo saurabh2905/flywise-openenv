@@ -38,9 +38,9 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
-import asyncio
 from typing import Any, List, Optional
 
 from openai import OpenAI, NotFoundError
@@ -779,13 +779,29 @@ def main() -> None:
 
     if docker_image:
         _eprint(f"[DEBUG] Starting environment Docker image={docker_image!r}")
+        # Do NOT use ``await from_docker_image()`` then ``.sync()``: the WebSocket is
+        # created on ``asyncio.run()``'s loop while SyncEnvClient runs I/O on a
+        # background thread loop — ``close()`` then fails (validator crash on exit).
+        from openenv.core.containers.runtime import LocalDockerProvider
 
-        async def _docker_main() -> None:
-            client_async = await FlywiseEnv.from_docker_image(docker_image)
-            with client_async.sync() as env:
-                _run_episodes_with_env(env)
-
-        asyncio.run(_docker_main())
+        _provider = LocalDockerProvider()
+        _base = _provider.start_container(docker_image)
+        _provider.wait_for_ready(_base)
+        _client = FlywiseEnv(base_url=_base, provider=_provider)
+        _sync = _client.sync()
+        _sync.__enter__()
+        try:
+            _run_episodes_with_env(_sync)
+        finally:
+            try:
+                _sync.__exit__(None, None, None)
+            except subprocess.TimeoutExpired as exc:
+                # OpenEnv uses ``docker stop`` with a short timeout; Docker Desktop
+                # can exceed it even after a healthy episode — do not fail the run.
+                _eprint(
+                    f"[WARN] docker stop timed out ({exc!s}); stdout results are still valid. "
+                    "If the container is stuck: docker ps && docker stop <id>"
+                )
     else:
         _eprint(f"[DEBUG] Environment server={env_url}")
         with FlywiseEnv(base_url=env_url).sync() as env:
