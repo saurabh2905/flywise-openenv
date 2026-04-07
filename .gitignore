@@ -1,0 +1,47 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local secrets / environment files
+.env
+.env.*
+!.env.example
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# IDE / OS files
+.DS_Store
+.cursor/
+.idea/
+.vscode/
+
+# Project outputs and local artifacts
+outputs/
+logs/
+tmp/
+
+# Large local training artifacts (do not commit)
+flywise-grpo-test/
+flywise-grpo-out/
+
+# Model / checkpoint files
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.bin
+

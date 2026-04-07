@@ -1,0 +1,28 @@
+.venv
+.git
+.gitignore
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+
+# Training / checkpoints — huge; not needed in the Space image (GB+ of context)
+flywise-grpo-test/
+flywise-grpo-out/
+outputs/
+.pytest_cache/
+*.egg-info/
+.cursor/
+
+# Common large ML artifacts if present at repo root
+*.safetensors
+*.pt
+*.bin
+*.ckpt
+
