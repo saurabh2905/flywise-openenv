@@ -6,5 +6,5 @@ app: server.app:app
 port: 8000
 description: >
   Multi-hop cheapest-route flight task over Indian metros (SQLite graph).
-  Three hackathon tasks with deterministic [0,1] graders (flywise_tasks.py / graders.py).
+  Three hackathon tasks with deterministic (0,1) graders (flywise_tasks.py / graders.py).
 

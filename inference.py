@@ -48,11 +48,13 @@ from openai import OpenAI, NotFoundError
 try:
     from FlyWise.client import FlywiseEnv
     from FlyWise.flywise_tasks import DEFAULT_HACKATHON_TASKS, FlywiseTaskSpec, task_by_id
+    from FlyWise.graders import compute_route_grader_score
     from FlyWise.load_data import ShortestPathCache, default_db_path, get_leg_price
     from FlyWise.models import FlywiseAction
 except ImportError:
     from client import FlywiseEnv  # type: ignore
     from flywise_tasks import DEFAULT_HACKATHON_TASKS, FlywiseTaskSpec, task_by_id  # type: ignore
+    from graders import compute_route_grader_score  # type: ignore
     from load_data import ShortestPathCache, default_db_path, get_leg_price  # type: ignore
     from models import FlywiseAction  # type: ignore
 
@@ -258,7 +260,7 @@ def resolve_openai_compatible_config() -> tuple[str, str, str]:
 
 
 def parse_task_selection(spec: str) -> list[FlywiseTaskSpec]:
-    s = (spec or "single").strip().lower()
+    s = (spec or "all").strip().lower()
     if s in ("", "single", "one"):
         return []
     if s == "all":
@@ -353,7 +355,7 @@ class LocalHFChat:
         # --- TEMPORARY: PEFT LoRA disabled for base vs adapter A/B runs. Uncomment the block below
         #     to load train_grpo output again. ---
         if lora_path:
-            print(
+            _eprint(
                 "[DEBUG] LoRA path given but adapter load is commented out — using base snapshot only.",
                 flush=True,
             )
@@ -428,6 +430,7 @@ def run_episode(
     step_index = 0
     success = False
     obs: Any = None
+    claimed_final_answer: float | None = None
 
     try:
         result = env.reset(**reset_kw)
@@ -532,6 +535,12 @@ def run_episode(
                     _eprint(f"[DEBUG] Fallback MOVE_TO first listed leg: {command!r}")
 
             step_index += 1
+            m_final = FINAL_ANSWER_INLINE.search(command or "")
+            if m_final:
+                try:
+                    claimed_final_answer = float(m_final.group(1))
+                except (TypeError, ValueError):
+                    claimed_final_answer = None
             try:
                 step_result = env.step(FlywiseAction(command=command))
             except Exception as exc:
@@ -574,6 +583,28 @@ def run_episode(
             final_payload = json.loads(obs.observation_json)
             if final_payload.get("grader_score") is not None:
                 grader_score = float(final_payload["grader_score"])
+            # Fallback: if server/client path dropped grader metadata, recompute deterministically.
+            if grader_score is None:
+                visited = [str(x) for x in (final_payload.get("visited_cities") or [])]
+                start_city = (visited[0] if visited else str(reset_kw.get("source_city") or "")).upper()
+                target_city = str(
+                    final_payload.get("target_city") or reset_kw.get("destination_city") or ""
+                ).upper()
+                if visited and start_city and target_city:
+                    try:
+                        grader_score = float(
+                            compute_route_grader_score(
+                                start_city=start_city,
+                                target_city=target_city,
+                                visited_cities=visited,
+                                total_path_cost=float(final_payload.get("total_cost") or 0.0),
+                                claimed_price=claimed_final_answer,
+                                db_path=db_path,
+                                cache=route_cache,
+                            )
+                        )
+                    except Exception:
+                        grader_score = None
             success = grader_score is not None and grader_score >= SUCCESS_SCORE_THRESHOLD
             fv = final_payload.get("visited_cities") or []
             f_legs, f_sum = describe_route_legs(fv, db_path)
@@ -621,8 +652,8 @@ def main() -> None:
     parser.add_argument("--dest", default=None, help="Destination IATA (optional)")
     parser.add_argument(
         "--tasks",
-        default="single",
-        help="single | all | easy | medium | hard | comma-separated task_ids (e.g. flywise_route_easy)",
+        default="all",
+        help="all (default) | single | easy | medium | hard | comma-separated task_ids (e.g. flywise_route_easy)",
     )
     parser.add_argument(
         "--docker-image",

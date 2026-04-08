@@ -103,8 +103,8 @@ python inference.py --tasks all
 
 **Stdout** (for autograding) uses only: `[START] task=… env=… model=…`, then one `[STEP] …` per `env.step()`, then `[END] success=… steps=… rewards=…` per episode. Debug lines go to **stderr**. Success uses terminal `grader_score >= FLYWISE_SUCCESS_GRADER_THRESHOLD` (default `0.99`, so a near-perfect grader still counts as success).
 
-- `--tasks single` (default): one episode; optional `--source` / `--dest` or `FLYWISE_SOURCE` / `FLYWISE_DEST`
-- `--tasks all|easy|medium|hard`: multiple episodes (each gets its own START/STEP/END block)
+- `--tasks all` (default): runs the full 3-task hackathon suite (each gets its own START/STEP/END block)
+- `--tasks single|easy|medium|hard`: select a subset; for `single`, optional `--source` / `--dest` or `FLYWISE_SOURCE` / `FLYWISE_DEST`
 - `FLYWISE_GUIDE_HOPS=0` disables local shortest-path nudging for a purer LLM baseline
 
 Multi-task summaries are printed on stderr, e.g. `[SUMMARY] flywise_route_easy | 1.0000 | 5.200 | True`.
