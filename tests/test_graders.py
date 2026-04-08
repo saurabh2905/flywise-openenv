@@ -8,7 +8,7 @@ import math
 import pytest
 
 from FlyWise.flywise_tasks import DEFAULT_HACKATHON_TASKS
-from FlyWise.graders import compute_route_grader_score
+from FlyWise.graders import compute_route_grader_score, map_closed_score_to_open_interval
 from FlyWise.load_data import ShortestPathCache, default_db_path, get_leg_price
 
 
@@ -38,7 +38,8 @@ def test_grader_perfect_score(cache: ShortestPathCache):
             claimed_price=opt,
             cache=cache,
         )
-        assert g == 1.0
+        assert 0.0 < g < 1.0
+        assert g == pytest.approx(map_closed_score_to_open_interval(1.0))
 
 
 def test_grader_not_at_target(cache: ShortestPathCache):
@@ -51,7 +52,8 @@ def test_grader_not_at_target(cache: ShortestPathCache):
         claimed_price=None,
         cache=cache,
     )
-    assert g == 0.0
+    assert 0.0 < g < 1.0
+    assert g == pytest.approx(map_closed_score_to_open_interval(0.0))
 
 
 def test_grader_scores_in_unit_interval(cache: ShortestPathCache):
@@ -68,4 +70,4 @@ def test_grader_scores_in_unit_interval(cache: ShortestPathCache):
         claimed_price=total_bad,
         cache=cache,
     )
-    assert 0.0 <= g <= 1.0
+    assert 0.0 < g < 1.0

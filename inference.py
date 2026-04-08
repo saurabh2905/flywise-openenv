@@ -65,7 +65,8 @@ FINAL_ANSWER_INLINE = re.compile(
 
 # Hackathon / sample script alignment (also overridable via env)
 BENCHMARK = os.environ.get("FLYWISE_BENCHMARK", "flywise")
-SUCCESS_SCORE_THRESHOLD = float(os.environ.get("FLYWISE_SUCCESS_GRADER_THRESHOLD", "1.0"))
+# Graders return scores strictly in (0, 1); perfect route maps to ~1 - eps.
+SUCCESS_SCORE_THRESHOLD = float(os.environ.get("FLYWISE_SUCCESS_GRADER_THRESHOLD", "0.99"))
 
 
 def _eprint(*args: Any, **kwargs: Any) -> None:
@@ -808,7 +809,7 @@ def main() -> None:
             _run_episodes_with_env(env)
 
     if len(summary_rows) > 1:
-        _eprint("[SUMMARY] task_id | grader_score[0,1] | env_cumulative_reward | success")
+        _eprint("[SUMMARY] task_id | grader_score(0,1) | env_cumulative_reward | success")
         for label, gs, tr, ok in summary_rows:
             gss = f"{gs:.4f}" if gs is not None else "n/a"
             _eprint(f"[SUMMARY] {label} | {gss} | {tr:.3f} | {ok}")

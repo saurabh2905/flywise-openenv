@@ -9,6 +9,7 @@ import math
 import pytest
 
 from FlyWise.flywise_tasks import DEFAULT_HACKATHON_TASKS
+from FlyWise.graders import map_closed_score_to_open_interval
 from FlyWise.load_data import ShortestPathCache, default_db_path, get_leg_price
 from FlyWise.models import FlywiseAction
 from FlyWise.server.FlyWise_environment import FlywiseEnvironment
@@ -50,5 +51,6 @@ def test_terminal_grader_in_observation_json(env: FlywiseEnvironment):
     final = env.step(FlywiseAction(command=f"FINAL_ANSWER({opt})"))
     assert final.done
     payload = json.loads(final.observation_json)
-    assert payload.get("grader_score") == 1.0
-    assert final.metadata.get("grader_score") == 1.0
+    expected = map_closed_score_to_open_interval(1.0)
+    assert math.isclose(payload.get("grader_score"), expected, rel_tol=0.0, abs_tol=1e-9)
+    assert math.isclose(final.metadata.get("grader_score"), expected, rel_tol=0.0, abs_tol=1e-9)

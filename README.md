@@ -15,7 +15,7 @@ tags:
 
 FlyWise is an [OpenEnv](https://github.com/meta-pytorch/OpenEnv) environment for **multi-hop flight routing** over six Indian metro airports (DEL, BOM, BLR, CCU, HYD, MAA). Leg prices come from a local SQLite graph with hub-style adjustments (same rules as `load_data.py`). The agent must discover the **cheapest total route** from a source to a destination, then report it with `FINAL_ANSWER(price)`.
 
-This repo is structured for **Hugging Face Spaces** (Docker + `openenv` tag), hackathon-style **deterministic graders** in `[0.0, 1.0]`, and a **baseline LLM** path using the official OpenAI API when `OPENAI_API_KEY` is set.
+This repo is structured for **Hugging Face Spaces** (Docker + `openenv` tag), hackathon-style **deterministic graders** in the **open** interval `(0, 1)` (endpoints excluded; see `graders.py`), and a **baseline LLM** path using the official OpenAI API when `OPENAI_API_KEY` is set.
 
 ## Try it on the Space (Gradio UI at `/web`)
 
@@ -39,7 +39,7 @@ Watch the **Raw JSON** panel for `observation_json` (it holds cities, flights, c
 
   - `current_city`, `target_city`, `available_flights`, `total_cost`, `visited_cities`, `message`
   - `task_id` when the episode was reset with a task id
-  - `grader_score` on the **terminal** observation after `FINAL_ANSWER` (deterministic score in `[0.0, 1.0]`)
+  - `grader_score` on the **terminal** observation after `FINAL_ANSWER` (deterministic score strictly in `(0, 1)`)
 
 Step **rewards** from the environment are for RL shaping (not normalized to `[0,1]`). **Official evaluation** for the three tasks uses `grader_score` (and the same function in `graders.py`).
 
@@ -57,12 +57,12 @@ If you regenerate the database from CSV, you can derive analogous triples with `
 
 ## Deterministic grader
 
-`graders.compute_route_grader_score(...)` returns a float in `[0.0, 1.0]` from:
+`graders.compute_route_grader_score(...)` returns a float strictly in `(0, 1)` from:
 
 - start/target cities, `visited_cities`, actual path cost, and claimed `FINAL_ANSWER` price  
 - ground-truth cheapest cost from the same SQLite graph as the env (`ShortestPathCache`)
 
-`1.0` means: at destination, flown total equals global minimum, and the claim matches that total. The server also writes this value into the **last** `observation_json` as `grader_score` (OpenEnv’s HTTP serializer omits top-level observation `metadata`, so the JSON field is the portable signal for clients).
+The **best** outcome maps near `1 - eps` (default `eps = 0.001` via `FLYWISE_GRADER_OPEN_EPS`), not exactly `1.0`, so submission validators that reject closed-endpoint scores still pass. The server writes the value into the **last** `observation_json` as `grader_score` (OpenEnv’s HTTP serializer omits top-level observation `metadata`, so the JSON field is the portable signal for clients).
 
 ## Quick start (local)
 
@@ -101,7 +101,7 @@ export ENV_SERVER_URL=http://localhost:8000
 python inference.py --tasks all
 ```
 
-**Stdout** (for autograding) uses only: `[START] task=… env=… model=…`, then one `[STEP] …` per `env.step()`, then `[END] success=… steps=… rewards=…` per episode. Debug lines go to **stderr**. Success uses terminal `grader_score >= FLYWISE_SUCCESS_GRADER_THRESHOLD` (default `1.0`).
+**Stdout** (for autograding) uses only: `[START] task=… env=… model=…`, then one `[STEP] …` per `env.step()`, then `[END] success=… steps=… rewards=…` per episode. Debug lines go to **stderr**. Success uses terminal `grader_score >= FLYWISE_SUCCESS_GRADER_THRESHOLD` (default `0.99`, so a near-perfect grader still counts as success).
 
 - `--tasks single` (default): one episode; optional `--source` / `--dest` or `FLYWISE_SOURCE` / `FLYWISE_DEST`
 - `--tasks all|easy|medium|hard`: multiple episodes (each gets its own START/STEP/END block)
