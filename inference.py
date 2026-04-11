@@ -86,10 +86,7 @@ def log_step(
     done: bool,
     error: Optional[str],
 ) -> None:
-    if error:
-        err = _sanitize_action_for_log(error).replace("=", " ")
-    else:
-        err = "null"
+    err = str(error) if error else "null"
     print(
         f"[STEP] step={step} action={_sanitize_action_for_log(action)} "
         f"reward={reward:.2f} done={str(done).lower()} error={err}",
@@ -103,21 +100,6 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
         f"[END] success={str(success).lower()} steps={steps} rewards={rstr}",
         flush=True,
     )
-
-
-def _reward_for_stdout(done: bool, grader_score: float | None) -> float:
-    """
-    Emit validator-friendly task score signals:
-    - intermediate steps: 0.00
-    - terminal step: clipped to [0.01, 0.99] so `%.2f` logging never prints 0.00/1.00
-      due to rounding (validator requires strict open interval endpoints).
-    """
-    if done and grader_score is not None:
-        return float(max(0.01, min(0.99, grader_score)))
-    if done:
-        # Terminal fallback if grader is unexpectedly missing.
-        return 0.01
-    return 0.0
 
 
 def _sanitize_action_for_log(action: str) -> str:
@@ -580,6 +562,8 @@ def run_episode(
             post = json.loads(obs.observation_json)
             if post.get("grader_score") is not None:
                 grader_score = float(post["grader_score"])
+            if post.get("last_action_error") is not None:
+                step_err = str(post.get("last_action_error"))
             visited = post.get("visited_cities") or []
             env_total = post.get("total_cost")
             legs_desc, legs_sum = describe_route_legs(visited, db_path)
@@ -588,9 +572,8 @@ def run_episode(
                 f"(sum of legs from DB={legs_sum:.2f})"
             )
 
-            r_out = _reward_for_stdout(done, grader_score)
-            log_step(step_index, command, r_out, done, step_err)
-            step_rewards.append(r_out)
+            log_step(step_index, command, r, done, step_err)
+            step_rewards.append(r)
 
             if done:
                 _eprint(f"[DEBUG] Episode done after step {step_index}.")
@@ -629,13 +612,14 @@ def run_episode(
                 post = json.loads(obs.observation_json)
                 if post.get("grader_score") is not None:
                     grader_score = float(post["grader_score"])
+                if post.get("last_action_error") is not None:
+                    step_err = str(post.get("last_action_error"))
             except Exception as exc:
                 r = 0.0
                 done = True
                 step_err = str(exc)
-            r_out = _reward_for_stdout(done, grader_score)
-            log_step(step_index, forced_cmd, r_out, done, step_err)
-            step_rewards.append(r_out)
+            log_step(step_index, forced_cmd, r, done, step_err)
+            step_rewards.append(r)
 
         if obs is not None:
             final_payload = json.loads(obs.observation_json)
