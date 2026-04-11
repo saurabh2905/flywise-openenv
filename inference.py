@@ -72,7 +72,8 @@ SUCCESS_SCORE_THRESHOLD = float(os.environ.get("FLYWISE_SUCCESS_GRADER_THRESHOLD
 
 
 def _eprint(*args: Any, **kwargs: Any) -> None:
-    print(*args, file=sys.stderr, **kwargs)
+    # Keep stdout restricted to START/STEP/END contract lines only.
+    return None
 
 
 def log_start(task: str, env: str, model: str) -> None:
@@ -746,12 +747,10 @@ def main() -> None:
         try:
             import torch  # noqa: F401
         except ModuleNotFoundError:
-            print(
-                "[END] PyTorch is required for --local-hf. Run:\n"
+            _eprint(
+                "[ERROR] PyTorch is required for --local-hf. Run:\n"
                 "  pip install -e \".[inference]\"\n"
-                "  # or: pip install torch transformers",
-                file=sys.stderr,
-                flush=True,
+                "  # or: pip install torch transformers"
             )
             raise
         llm_local = LocalHFChat(snapshot_path, lora_path=lora_resolved)
@@ -782,11 +781,9 @@ def main() -> None:
                     max_tokens=512,
                 )
             except NotFoundError as err:
-                print(
-                    "[END] LLM 404: model not found. For Ollama: `ollama list` then "
-                    "`export MODEL=...`, or use `python inference.py --local-hf` for cached HF.",
-                    file=sys.stderr,
-                    flush=True,
+                _eprint(
+                    "[ERROR] LLM 404: model not found. For Ollama: `ollama list` then "
+                    "`export MODEL=...`, or use `python inference.py --local-hf` for cached HF."
                 )
                 raise err from None
             return (completion.choices[0].message.content or "").strip()
