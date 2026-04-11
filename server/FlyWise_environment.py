@@ -216,7 +216,7 @@ class FlywiseEnvironment(Environment):
 
         if kind == "FETCH_FLIGHTS":
             flights = query_outbound_flights(self._db_path, self._current_city)
-            reward = 0.0
+            reward = 0.02
             message = f"Listed {len(flights)} outbound flights from {self._current_city}."
 
         elif kind == "MOVE_TO":
@@ -244,16 +244,16 @@ class FlywiseEnvironment(Environment):
                         if math.isfinite(c_prev) and math.isfinite(c_next):
                             improvement = c_prev - c_next
                             if improvement > 0:
-                                reward = 0.0
+                                reward = 0.05
                                 message = f"Moved {prev}→{city}; closer to optimal remaining cost."
                             elif improvement < 0:
-                                reward = 0.0
+                                reward = 0.01
                                 message = f"Moved {prev}→{city}; remaining optimal cost increased."
                             else:
-                                reward = 0.0
+                                reward = 0.02
                                 message = f"Moved {prev}→{city}; no change in optimal remaining cost."
                         else:
-                            reward = 0.0
+                            reward = 0.02
                             message = f"Moved {prev}→{city}."
 
                         self._current_city = city

@@ -22,7 +22,7 @@ STDOUT must contain only these line types (debug → stderr):
 
   [START] task=<task_name> env=<benchmark> model=<model_name>
   [STEP] step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-  [END] success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
+  [END] success=<true|false> steps=<n> score=<s> rewards=<r1,r2,...,rn>
 
 One ``[START]`` per episode, one ``[STEP]`` per ``env.step()``, one ``[END]`` per episode
 (``--tasks all`` runs multiple episodes → multiple triples). Rewards use 2 decimal places;
@@ -97,10 +97,10 @@ def log_step(
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rstr = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rstr}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rstr}",
         flush=True,
     )
 
@@ -444,6 +444,7 @@ def run_episode(
     step_rewards: List[float] = []
     step_index = 0
     success = False
+    episode_score = 0.01
     obs: Any = None
     claimed_final_answer: float | None = None
 
@@ -664,6 +665,10 @@ def run_episode(
                     except Exception:
                         grader_score = None
             success = grader_score is not None and grader_score >= SUCCESS_SCORE_THRESHOLD
+            if grader_score is not None:
+                episode_score = float(max(0.01, min(0.99, grader_score)))
+            elif step_rewards:
+                episode_score = float(max(0.01, min(0.99, sum(step_rewards))))
             fv = final_payload.get("visited_cities") or []
             f_legs, f_sum = describe_route_legs(fv, db_path)
             _eprint(
@@ -672,7 +677,7 @@ def run_episode(
                 f"grader={grader_score}"
             )
     finally:
-        log_end(success, len(step_rewards), step_rewards)
+        log_end(success, len(step_rewards), episode_score, step_rewards)
 
     final_payload = json.loads(obs.observation_json) if obs is not None else {}
     if final_payload.get("grader_score") is not None:
