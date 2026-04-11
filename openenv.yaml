@@ -8,3 +8,25 @@ description: >
   Multi-hop cheapest-route flight task over Indian metros (SQLite graph).
   Three hackathon tasks with deterministic (0,1) graders (flywise_tasks.py / graders.py).
 
+tasks:
+  - id: flywise_route_easy
+    name: Direct cheapest hop
+    difficulty: easy
+    description: BLR->BOM where the cheapest route is a single direct leg.
+    reward_range: [0.01, 0.99]
+  - id: flywise_route_medium
+    name: Two-hop metro routing
+    difficulty: medium
+    description: BLR->HYD where the cheapest route uses two legs.
+    reward_range: [0.01, 0.99]
+  - id: flywise_route_hard
+    name: Misleading direct leg
+    difficulty: hard
+    description: MAA->CCU where a direct leg exists but is more expensive than a two-hop path.
+    reward_range: [0.01, 0.99]
+
+grading:
+  score_range: [0.01, 0.99]
+  grader_module: graders.py
+  grader_function: compute_route_grader_score
+

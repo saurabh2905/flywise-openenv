@@ -216,26 +216,27 @@ class FlywiseEnvironment(Environment):
 
         if kind == "FETCH_FLIGHTS":
             flights = query_outbound_flights(self._db_path, self._current_city)
+            reward = 0.0
             message = f"Listed {len(flights)} outbound flights from {self._current_city}."
 
         elif kind == "MOVE_TO":
             if city is None:
-                reward = -0.1
+                reward = 0.0
                 message = "MOVE_TO requires a valid 3-letter IATA code."
             else:
                 prev = self._current_city
                 tgt = self._target_city
 
                 if city not in METROS:
-                    reward = -0.5
+                    reward = 0.0
                     message = f"Unknown airport code: {city}."
                 elif city == self._current_city:
-                    reward = -0.2
+                    reward = 0.0
                     message = f"Already at {city}."
                 else:
                     leg = get_leg_price(self._db_path, self._current_city, city)
                     if leg is None:
-                        reward = -0.5
+                        reward = 0.0
                         message = f"No flight from {self._current_city} to {city}."
                     else:
                         c_prev = self._cache.get_cheapest_cost(prev, tgt)
@@ -243,10 +244,10 @@ class FlywiseEnvironment(Environment):
                         if math.isfinite(c_prev) and math.isfinite(c_next):
                             improvement = c_prev - c_next
                             if improvement > 0:
-                                reward = 0.2
+                                reward = 0.0
                                 message = f"Moved {prev}→{city}; closer to optimal remaining cost."
                             elif improvement < 0:
-                                reward = -0.5
+                                reward = 0.0
                                 message = f"Moved {prev}→{city}; remaining optimal cost increased."
                             else:
                                 reward = 0.0
@@ -271,8 +272,8 @@ class FlywiseEnvironment(Environment):
                 db_path=self._db_path,
                 cache=self._cache,
             )
+            reward = float(grader_score)
             if price is None:
-                reward = -0.1
                 message = "FINAL_ANSWER requires a numeric price."
             else:
                 gt = self._ground_truth_cost()
@@ -289,12 +290,10 @@ class FlywiseEnvironment(Environment):
                     price, gt, rel_tol=0.0, abs_tol=1e-2
                 )
                 if at_goal and path_ok and claim_matches_path and claim_matches_opt:
-                    reward = 5.0
                     message = (
                         f"Correct: path total {self._total_cost:.2f} equals cheapest route {gt:.2f}."
                     )
                 else:
-                    reward = -2.0
                     if at_goal and not path_ok and math.isfinite(gt):
                         message = (
                             f"Suboptimal route: actual path cost {self._total_cost:.2f} vs "
@@ -312,7 +311,7 @@ class FlywiseEnvironment(Environment):
                         )
 
         else:
-            reward = -0.1
+            reward = 0.0
             message = f"Unrecognized command: {action.command!r}."
 
         if not flights and kind != "FINAL_ANSWER":

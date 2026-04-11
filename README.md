@@ -41,7 +41,7 @@ Watch the **Raw JSON** panel for `observation_json` (it holds cities, flights, c
   - `task_id` when the episode was reset with a task id
   - `grader_score` on the **terminal** observation after `FINAL_ANSWER` (deterministic score strictly in `(0, 1)`)
 
-Step **rewards** from the environment are for RL shaping (not normalized to `[0,1]`). **Official evaluation** for the three tasks uses `grader_score` (and the same function in `graders.py`).
+Step **rewards** are now score-aligned: intermediate steps return `0.0`, and the terminal step returns `grader_score` (strictly in `(0, 1)`). So episode score is directly the terminal grader value, while progress hints remain in observation messages. **Official evaluation** for the three tasks uses `grader_score` (and the same function in `graders.py`).
 
 ## Tasks (easy → hard)
 
