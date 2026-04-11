@@ -22,7 +22,7 @@ STDOUT must contain only these line types (debug → stderr):
 
   [START] task=<task_name> env=<benchmark> model=<model_name>
   [STEP] step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-  [END] success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
+  [END] success=<true|false> steps=<n> score=<s> rewards=<r1,r2,...,rn>
 
 One ``[START]`` per episode, one ``[STEP]`` per ``env.step()``, one ``[END]`` per episode
 (``--tasks all`` runs multiple episodes → multiple triples). Rewards use 2 decimal places;
@@ -88,20 +88,17 @@ def log_step(
     error: Optional[str],
 ) -> None:
     err = str(error) if error else "null"
-    # Keep printed rewards strictly in (0,1) after 2-decimal formatting.
-    reward_out = max(0.01, min(0.99, float(reward)))
     print(
         f"[STEP] step={step} action={_sanitize_action_for_log(action)} "
-        f"reward={reward_out:.2f} done={str(done).lower()} error={err}",
+        f"reward={reward:.2f} done={str(done).lower()} error={err}",
         flush=True,
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    # Keep printed rewards strictly in (0,1) after 2-decimal formatting.
-    rstr = ",".join(f"{max(0.01, min(0.99, float(r))):.2f}" for r in rewards)
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rstr = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rstr}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rstr}",
         flush=True,
     )
 
@@ -109,6 +106,19 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 def _sanitize_action_for_log(action: str) -> str:
     s = (action or "").replace("\n", " ").replace("\r", " ").strip()
     return s if s else "(empty)"
+
+
+def _stdout_reward(done: bool, grader_score: float | None) -> float:
+    """
+    Normalize printed step rewards for robust validator parsing:
+    - non-terminal steps: 0.00
+    - terminal step: score-like value in (0,1), rounded-safe.
+    """
+    if done and grader_score is not None:
+        return float(max(0.01, min(0.99, grader_score)))
+    if done:
+        return 0.01
+    return 0.0
 
 
 def describe_route_legs(visited: list[str], db_path: str) -> tuple[str, float]:
@@ -430,6 +440,7 @@ def run_episode(
     step_rewards: List[float] = []
     step_index = 0
     success = False
+    episode_score = 0.01
     obs: Any = None
     claimed_final_answer: float | None = None
 
@@ -549,8 +560,9 @@ def run_episode(
                 r = 0.0
                 done = True
                 step_err = step_err or str(exc)
-                log_step(step_index, command, r, done, step_err)
-                step_rewards.append(r)
+                r_out = _stdout_reward(done, grader_score)
+                log_step(step_index, command, r_out, done, step_err)
+                step_rewards.append(r_out)
                 break
 
             r = float(step_result.reward or 0.0)
@@ -576,8 +588,9 @@ def run_episode(
                 f"(sum of legs from DB={legs_sum:.2f})"
             )
 
-            log_step(step_index, command, r, done, step_err)
-            step_rewards.append(r)
+            r_out = _stdout_reward(done, grader_score)
+            log_step(step_index, command, r_out, done, step_err)
+            step_rewards.append(r_out)
 
             if done:
                 _eprint(f"[DEBUG] Episode done after step {step_index}.")
@@ -622,8 +635,9 @@ def run_episode(
                 r = 0.0
                 done = True
                 step_err = str(exc)
-            log_step(step_index, forced_cmd, r, done, step_err)
-            step_rewards.append(r)
+            r_out = _stdout_reward(done, grader_score)
+            log_step(step_index, forced_cmd, r_out, done, step_err)
+            step_rewards.append(r_out)
 
         if obs is not None:
             final_payload = json.loads(obs.observation_json)
@@ -652,6 +666,10 @@ def run_episode(
                     except Exception:
                         grader_score = None
             success = grader_score is not None and grader_score >= SUCCESS_SCORE_THRESHOLD
+            if grader_score is not None:
+                episode_score = float(max(0.01, min(0.99, grader_score)))
+            elif step_rewards:
+                episode_score = float(max(0.01, min(0.99, sum(step_rewards))))
             fv = final_payload.get("visited_cities") or []
             f_legs, f_sum = describe_route_legs(fv, db_path)
             _eprint(
@@ -660,7 +678,7 @@ def run_episode(
                 f"grader={grader_score}"
             )
     finally:
-        log_end(success, len(step_rewards), step_rewards)
+        log_end(success, len(step_rewards), episode_score, step_rewards)
 
     final_payload = json.loads(obs.observation_json) if obs is not None else {}
     if final_payload.get("grader_score") is not None:
