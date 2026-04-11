@@ -107,13 +107,17 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 
 def _reward_for_stdout(done: bool, grader_score: float | None) -> float:
     """
-    Emit validator-friendly step rewards:
-    - intermediate steps: 0.00
-    - terminal step: grader score in (0,1) when available
+    Emit validator-friendly step rewards strictly in (0, 1):
+    - intermediate steps: 0.01
+    - terminal step: clipped to [0.01, 0.99] so `%.2f` logging never prints 0.00/1.00
+      due to rounding (validator requires strict open interval endpoints).
     """
     if done and grader_score is not None:
-        return float(max(0.0, min(1.0, grader_score)))
-    return 0.0
+        return float(max(0.01, min(0.99, grader_score)))
+    if done:
+        # Terminal fallback if grader is unexpectedly missing.
+        return 0.01
+    return 0.01
 
 
 def _sanitize_action_for_log(action: str) -> str:
