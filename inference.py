@@ -88,15 +88,18 @@ def log_step(
     error: Optional[str],
 ) -> None:
     err = str(error) if error else "null"
+    # Keep printed rewards strictly in (0,1) after 2-decimal formatting.
+    reward_out = max(0.01, min(0.99, float(reward)))
     print(
         f"[STEP] step={step} action={_sanitize_action_for_log(action)} "
-        f"reward={reward:.2f} done={str(done).lower()} error={err}",
+        f"reward={reward_out:.2f} done={str(done).lower()} error={err}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rstr = ",".join(f"{r:.2f}" for r in rewards)
+    # Keep printed rewards strictly in (0,1) after 2-decimal formatting.
+    rstr = ",".join(f"{max(0.01, min(0.99, float(r))):.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} rewards={rstr}",
         flush=True,
