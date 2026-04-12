@@ -53,4 +53,6 @@ def test_terminal_grader_in_observation_json(env: FlywiseEnvironment):
     payload = json.loads(final.observation_json)
     expected = map_closed_score_to_open_interval(1.0)
     assert math.isclose(payload.get("grader_score"), expected, rel_tol=0.0, abs_tol=1e-9)
+    assert math.isclose(payload.get("score"), expected, rel_tol=0.0, abs_tol=1e-9)
     assert math.isclose(final.metadata.get("grader_score"), expected, rel_tol=0.0, abs_tol=1e-9)
+    assert math.isclose(final.metadata.get("score"), expected, rel_tol=0.0, abs_tol=1e-9)

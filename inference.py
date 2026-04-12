@@ -18,17 +18,24 @@ Configure before submit:
 
 Use the ``openai.OpenAI`` client for all remote LLM calls (``--local-hf`` uses Transformers locally).
 
-STDOUT must contain only these line types (debug → stderr):
+During an episode run, **stdout** must contain **only** these lines:
 
   [START] task=<task_name> env=<benchmark> model=<model_name>
-  [STEP] step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
+  [STEP] step=<n> action=<action_str> reward=<float> done=<true|false> error=<msg|null>
   [END] success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
+
+Implementation: ``_contract_print`` is the **only** writer to ``sys.stdout`` in this module
+(except ``argparse`` ``--help``, which prints its own usage to stdout).
+
+Optional **stderr** diagnostics (``[DEBUG]``, ``[ROUTE]``, ``[SUMMARY]``, warnings) print only
+when ``FLYWISE_VERBOSE=1`` (or ``true`` / ``yes``). Uncaught exceptions still emit ``fatal: …``
+on stderr before the traceback.
 
 One ``[START]`` per episode, one ``[STEP]`` per ``env.step()``, one ``[END]`` per episode
 (``--tasks all`` runs multiple episodes → multiple triples). Rewards use 2 decimal places;
 ``done`` / ``success`` are lowercase booleans; ``error`` is ``null`` or a short message.
 
-Also: ``ENV_SERVER_URL``, ``FLYWISE_*`` (see ``--help`` / stderr logs).
+Also: ``ENV_SERVER_URL``, ``FLYWISE_*`` (see ``--help``).
 """
 
 from __future__ import annotations
@@ -71,13 +78,24 @@ BENCHMARK = os.environ.get("FLYWISE_BENCHMARK", "flywise")
 SUCCESS_SCORE_THRESHOLD = float(os.environ.get("FLYWISE_SUCCESS_GRADER_THRESHOLD", "0.99"))
 
 
+def _stderr_verbose() -> bool:
+    return os.environ.get("FLYWISE_VERBOSE", "").lower() in ("1", "true", "yes")
+
+
+def _contract_print(line: str) -> None:
+    """Write one hackathon contract line to stdout (START / STEP / END only)."""
+    sys.stdout.write(line + "\n")
+    sys.stdout.flush()
+
+
 def _eprint(*args: Any, **kwargs: Any) -> None:
-    # Keep stdout restricted to START/STEP/END contract lines only.
-    return None
+    if not _stderr_verbose():
+        return
+    print(*args, file=sys.stderr, **kwargs)
 
 
 def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
+    _contract_print(f"[START] task={task} env={env} model={model}")
 
 
 def log_step(
@@ -88,19 +106,15 @@ def log_step(
     error: Optional[str],
 ) -> None:
     err = str(error) if error else "null"
-    print(
+    _contract_print(
         f"[STEP] step={step} action={_sanitize_action_for_log(action)} "
-        f"reward={reward:.2f} done={str(done).lower()} error={err}",
-        flush=True,
+        f"reward={reward:.2f} done={str(done).lower()} error={err}"
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
     rstr = ",".join(f"{r:.2f}" for r in rewards)
-    print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rstr}",
-        flush=True,
-    )
+    _contract_print(f"[END] success={str(success).lower()} steps={steps} rewards={rstr}")
 
 
 def _sanitize_action_for_log(action: str) -> str:
@@ -108,17 +122,29 @@ def _sanitize_action_for_log(action: str) -> str:
     return s if s else "(empty)"
 
 
-def _stdout_reward(done: bool, grader_score: float | None) -> float:
+def _json_grader(d: dict) -> float | None:
+    """Read task score from observation JSON (portable across servers)."""
+    if d.get("grader_score") is not None:
+        return float(d["grader_score"])
+    if d.get("score") is not None:
+        return float(d["score"])
+    return None
+
+
+def _stdout_reward(done: bool, grader_score: float | None, env_reward: float) -> float:
     """
-    Normalize printed step rewards for robust validator parsing:
-    - non-terminal steps: 0.00
-    - terminal step: score-like value in (0,1), rounded-safe.
+    What we print on ``[STEP]`` is **contract-shaped**, not always equal to OpenEnv ``reward``:
+
+    - **Terminal**: use the grader (strict ``(0,1)`` from the server), clamped to
+      ``[0.01, 0.99]`` so ``%.2f`` never prints ``0.00`` / ``1.00``.
+    - **Non-terminal**: echo the environment shaping reward ``env_reward``, clamped to the
+      same band so a true ``0.0`` from the env still prints as ``0.01`` (validator-safe).
     """
     if done and grader_score is not None:
         return float(max(0.01, min(0.99, grader_score)))
     if done:
         return 0.01
-    return 0.0
+    return float(max(0.01, min(0.99, env_reward)))
 
 
 def describe_route_legs(visited: list[str], db_path: str) -> tuple[str, float]:
@@ -559,7 +585,7 @@ def run_episode(
                 r = 0.0
                 done = True
                 step_err = step_err or str(exc)
-                r_out = _stdout_reward(done, grader_score)
+                r_out = _stdout_reward(done, grader_score, 0.0)
                 log_step(step_index, command, r_out, done, step_err)
                 step_rewards.append(r_out)
                 break
@@ -571,12 +597,15 @@ def run_episode(
             done = bool(step_result.done or obs.done)
 
             meta = getattr(obs, "metadata", None) or {}
-            if isinstance(meta, dict) and "grader_score" in meta:
-                grader_score = float(meta["grader_score"])
+            if isinstance(meta, dict):
+                g_meta = _json_grader(meta)
+                if g_meta is not None:
+                    grader_score = g_meta
 
             post = json.loads(obs.observation_json)
-            if post.get("grader_score") is not None:
-                grader_score = float(post["grader_score"])
+            g_post = _json_grader(post)
+            if g_post is not None:
+                grader_score = g_post
             if post.get("last_action_error") is not None:
                 step_err = str(post.get("last_action_error"))
             visited = post.get("visited_cities") or []
@@ -587,7 +616,7 @@ def run_episode(
                 f"(sum of legs from DB={legs_sum:.2f})"
             )
 
-            r_out = _stdout_reward(done, grader_score)
+            r_out = _stdout_reward(done, grader_score, r)
             log_step(step_index, command, r_out, done, step_err)
             step_rewards.append(r_out)
 
@@ -623,25 +652,29 @@ def run_episode(
                 obs = step_result.observation
                 done = bool(step_result.done or obs.done)
                 meta = getattr(obs, "metadata", None) or {}
-                if isinstance(meta, dict) and "grader_score" in meta:
-                    grader_score = float(meta["grader_score"])
+                if isinstance(meta, dict):
+                    g_meta = _json_grader(meta)
+                    if g_meta is not None:
+                        grader_score = g_meta
                 post = json.loads(obs.observation_json)
-                if post.get("grader_score") is not None:
-                    grader_score = float(post["grader_score"])
+                g_post = _json_grader(post)
+                if g_post is not None:
+                    grader_score = g_post
                 if post.get("last_action_error") is not None:
                     step_err = str(post.get("last_action_error"))
             except Exception as exc:
                 r = 0.0
                 done = True
                 step_err = str(exc)
-            r_out = _stdout_reward(done, grader_score)
+            r_out = _stdout_reward(done, grader_score, r)
             log_step(step_index, forced_cmd, r_out, done, step_err)
             step_rewards.append(r_out)
 
         if obs is not None:
             final_payload = json.loads(obs.observation_json)
-            if final_payload.get("grader_score") is not None:
-                grader_score = float(final_payload["grader_score"])
+            g_fin = _json_grader(final_payload)
+            if g_fin is not None:
+                grader_score = g_fin
             # Fallback: if server/client path dropped grader metadata, recompute deterministically.
             if grader_score is None:
                 visited = [str(x) for x in (final_payload.get("visited_cities") or [])]
@@ -676,8 +709,9 @@ def run_episode(
         log_end(success, len(step_rewards), step_rewards)
 
     final_payload = json.loads(obs.observation_json) if obs is not None else {}
-    if final_payload.get("grader_score") is not None:
-        grader_score = float(final_payload["grader_score"])
+    g_ret = _json_grader(final_payload)
+    if g_ret is not None:
+        grader_score = g_ret
     return {
         "total_reward": total_reward,
         "grader_score": grader_score,
@@ -905,5 +939,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        _eprint(f"fatal: {e}")
+        print(f"fatal: {e}", file=sys.stderr, flush=True)
         raise

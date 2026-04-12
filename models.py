@@ -28,6 +28,6 @@ class FlywiseObservation(Observation):
         default="{}",
         description=(
             "JSON: current_city, target_city, available_flights, total_cost, visited_cities, message; "
-            "optional task_id; on terminal steps after FINAL_ANSWER, grader_score strictly in (0,1)"
+            "optional task_id; on terminal steps after FINAL_ANSWER, grader_score and alias score (same value) strictly in (0,1)"
         ),
     )

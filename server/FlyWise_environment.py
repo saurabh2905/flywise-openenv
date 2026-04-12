@@ -122,7 +122,9 @@ class FlywiseEnvironment(Environment):
         if self._task_id:
             payload["task_id"] = self._task_id
         if grader_score is not None:
-            payload["grader_score"] = float(grader_score)
+            gs = float(grader_score)
+            payload["grader_score"] = gs
+            payload["score"] = gs
         return json.dumps(payload, ensure_ascii=False)
 
     def reset(
@@ -324,7 +326,9 @@ class FlywiseEnvironment(Environment):
         if self._task_id:
             meta_out["task_id"] = self._task_id
         if kind == "FINAL_ANSWER" and grader_score is not None:
-            meta_out["grader_score"] = float(grader_score)
+            gs = float(grader_score)
+            meta_out["grader_score"] = gs
+            meta_out["score"] = gs
 
         obs_grader = float(grader_score) if kind == "FINAL_ANSWER" and grader_score is not None else None
         return FlywiseObservation(
